@@ -175,6 +175,28 @@ Rules:
         throw last != null ? last : new Exception("unknown error");
     }
 
+    /** key ঠিক আছে কিনা পরীক্ষা করে একটা বার্তা ফেরত দেয়। */
+    static String checkKey(String apiKey) {
+        HttpURLConnection c = null;
+        try {
+            URL url = new URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1");
+            c = (HttpURLConnection) url.openConnection();
+            c.setRequestProperty("x-goog-api-key", apiKey);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(15000);
+            int code = c.getResponseCode();
+            if (code == 200) return "✅ key ঠিক আছে";
+            if (code == 400 || code == 403) {
+                return "❌ key ঠিক নেই (" + code + "). AI Studio থেকে আবার কপি করে সেভ করুন";
+            }
+            return "⚠️ কোড " + code + ": " + shorten(readAll(c.getErrorStream()));
+        } catch (Exception e) {
+            return "⚠️ ইন্টারনেটে সমস্যা: " + e.getMessage();
+        } finally {
+            if (c != null) c.disconnect();
+        }
+    }
+
     static String readAll(InputStream in) throws Exception {
         if (in == null) return "";
         ByteArrayOutputStream out = new ByteArrayOutputStream();

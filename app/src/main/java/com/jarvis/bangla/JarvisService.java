@@ -2,15 +2,20 @@ package com.jarvis.bangla;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.content.Context;
+import android.content.Intent;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
@@ -45,16 +50,132 @@ public class JarvisService extends AccessibilityService {
         AccessibilityNodeInfo node;
     }
 
+    private View bubble;
+    private TextView bubbleText;
+    private WindowManager.LayoutParams bubbleLp;
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        if (getSharedPreferences("jarvis", Context.MODE_PRIVATE).getBoolean("bubble", true)) {
+            showBubble();
+        }
     }
 
     @Override
-    public boolean onUnbind(android.content.Intent intent) {
+    public boolean onUnbind(Intent intent) {
         instance = null;
+        hideBubble();
         return super.onUnbind(intent);
+    }
+
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density);
+    }
+
+    /** স্ক্রিনের পাশে একটা ভাসমান 🎤 বাটন দেখায়। ট্যাপ করলে বলা যায়, টেনে সরানো যায়। */
+    void showBubble() {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (bubble != null) return;
+            final WindowManager wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+            final TextView tv = new TextView(this);
+            tv.setText("🎤");
+            tv.setTextSize(24);
+            tv.setGravity(Gravity.CENTER);
+            tv.setTextColor(0xFFFFFFFF);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.OVAL);
+            bg.setColor(0xCC1565C0);
+            tv.setBackground(bg);
+
+            int type = Settings.canDrawOverlays(this)
+                    ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    : WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY;
+            final WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    dp(56), dp(56), type,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.x = 0;
+            lp.y = dp(300);
+
+            tv.setOnTouchListener(new View.OnTouchListener() {
+                float downX;
+                float downY;
+                int startX;
+                int startY;
+                boolean moved;
+
+                @Override
+                public boolean onTouch(View v, MotionEvent e) {
+                    switch (e.getAction()) {
+                        case MotionEvent.ACTION_DOWN:
+                            downX = e.getRawX();
+                            downY = e.getRawY();
+                            startX = lp.x;
+                            startY = lp.y;
+                            moved = false;
+                            return true;
+                        case MotionEvent.ACTION_MOVE: {
+                            float dx = e.getRawX() - downX;
+                            float dy = e.getRawY() - downY;
+                            if (Math.abs(dx) > 12 || Math.abs(dy) > 12) moved = true;
+                            if (moved) {
+                                lp.x = startX + (int) dx;
+                                lp.y = startY + (int) dy;
+                                try {
+                                    wm.updateViewLayout(v, lp);
+                                } catch (Exception ignored) { }
+                            }
+                            return true;
+                        }
+                        case MotionEvent.ACTION_UP:
+                            if (!moved) onBubbleTap();
+                            return true;
+                        default:
+                            return false;
+                    }
+                }
+            });
+
+            try {
+                wm.addView(tv, lp);
+                bubble = tv;
+                bubbleText = tv;
+                bubbleLp = lp;
+            } catch (Exception ex) {
+                AppLog.log("⚠️ ভাসমান বাটন দেখাতে পারিনি: " + ex.getMessage());
+            }
+        });
+    }
+
+    void hideBubble() {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (bubble == null) return;
+            try {
+                ((WindowManager) getSystemService(WINDOW_SERVICE)).removeView(bubble);
+            } catch (Exception ignored) { }
+            bubble = null;
+            bubbleText = null;
+        });
+    }
+
+    void setBubble(final String emoji) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            if (bubbleText != null) bubbleText.setText(emoji);
+        });
+    }
+
+    private void onBubbleTap() {
+        Intent i = new Intent(this, VoiceActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_ANIMATION);
+        try {
+            startActivity(i);
+        } catch (Exception e) {
+            AppLog.log("⚠️ শোনার পর্দা খুলতে পারিনি: " + e.getMessage());
+        }
     }
 
     @Override

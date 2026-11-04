@@ -9,6 +9,17 @@ import org.json.JSONObject;
 public class Controller {
 
     static void handle(Context ctx, String apiKey, String command, Agent.Logger log) {
+        JarvisService svc = JarvisService.get();
+        if (svc != null) svc.setBubble("⏳");
+        try {
+            handleInner(ctx, apiKey, command, log);
+        } finally {
+            JarvisService again = JarvisService.get();
+            if (again != null) again.setBubble("🎤");
+        }
+    }
+
+    private static void handleInner(Context ctx, String apiKey, String command, Agent.Logger log) {
         JSONObject r;
         try {
             r = Brain.route(ctx, apiKey, command);
